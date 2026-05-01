@@ -1,0 +1,83 @@
+# Top-level simulator. Runs `n_rounds` rounds, reshuffling whenever the cut
+# card is reached at the end of a hand. Tracks bankroll, true count at bet
+# time, hand outcomes, and produces a summary.
+
+simulate_blackjack <- function(n_rounds       = 10000,
+                               n_decks        = 6,
+                               counting       = "Hi-Lo",
+                               betting        = spread_bet(),
+                               rules          = default_rules(),
+                               min_bet        = 1,
+                               max_bet        = 500,
+                               cut_range      = c(0.80, 1.00),
+                               start_bankroll = 0,
+                               seed           = NULL,
+                               verbose        = FALSE) {
+  if (!is.null(seed)) set.seed(seed)
+  system <- if (is.character(counting)) get_system(counting, n_decks) else counting
+
+  shoe <- new_shoe(n_decks, system, cut_range)
+  if (!system$balanced) shoe$running_count <- system$ihc
+
+  net_per_round  <- numeric(n_rounds)
+  bet_per_round  <- numeric(n_rounds)
+  tc_per_round   <- numeric(n_rounds)
+  rc_per_round   <- numeric(n_rounds)
+  hands_dealt    <- integer(n_rounds)
+  shoes_played   <- 0L
+
+  bankroll <- start_bankroll
+
+  for (i in seq_len(n_rounds)) {
+    # Need enough cards to start a hand; reshuffle if cut card already passed.
+    if (shoe_exhausted(shoe) || cards_remaining(shoe) < 15) {
+      shoe <- new_shoe(n_decks, system, cut_range)
+      if (!system$balanced) shoe$running_count <- system$ihc
+      shoes_played <- shoes_played + 1L
+    }
+    res <- play_round(shoe, betting, rules, min_bet, max_bet)
+    shoe <- res$shoe
+    net_per_round[i]  <- res$net
+    bet_per_round[i]  <- res$bet
+    tc_per_round[i]   <- res$tc_at_bet
+    rc_per_round[i]   <- res$rc_at_bet
+    hands_dealt[i]    <- res$n_hands
+    bankroll <- bankroll + res$net
+    if (verbose && i %% 1000 == 0) {
+      message(sprintf("Round %d: bankroll=%.2f", i, bankroll))
+    }
+  }
+
+  total_action <- sum(bet_per_round)
+  total_net    <- sum(net_per_round)
+  list(
+    summary = list(
+      counting_system = system$name,
+      rounds          = n_rounds,
+      shoes_played    = shoes_played,
+      total_wagered   = total_action,
+      total_net       = total_net,
+      ev_per_round    = mean(net_per_round),
+      ev_per_unit     = if (total_action > 0) total_net / total_action else NA_real_,
+      win_rate_hands  = mean(net_per_round > 0),
+      avg_bet         = mean(bet_per_round[bet_per_round > 0]),
+      bankroll        = bankroll
+    ),
+    rounds = data.frame(
+      round       = seq_len(n_rounds),
+      true_count  = tc_per_round,
+      running_cnt = rc_per_round,
+      bet         = bet_per_round,
+      net         = net_per_round,
+      n_hands     = hands_dealt
+    )
+  )
+}
+
+# Source all source files in one go.
+source_all <- function(dir = "R") {
+  files <- c("counting_systems.R", "cards.R", "hand.R", "basic_strategy.R",
+             "betting.R", "play.R", "simulate.R")
+  for (f in files) source(file.path(dir, f))
+  invisible(TRUE)
+}
