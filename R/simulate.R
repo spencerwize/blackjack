@@ -19,12 +19,13 @@ simulate_blackjack <- function(n_rounds       = 10000,
   shoe <- new_shoe(n_decks, system, cut_range)
   if (!system$balanced) shoe$running_count <- system$ihc
 
-  net_per_round  <- numeric(n_rounds)
-  bet_per_round  <- numeric(n_rounds)
-  tc_per_round   <- numeric(n_rounds)
-  rc_per_round   <- numeric(n_rounds)
-  hands_dealt    <- integer(n_rounds)
-  shoes_played   <- 0L
+  net_per_round    <- numeric(n_rounds)
+  bet_per_round    <- numeric(n_rounds)
+  tc_per_round     <- numeric(n_rounds)
+  rc_per_round     <- numeric(n_rounds)
+  hands_per_round  <- integer(n_rounds)
+  shoe_id_per_round <- integer(n_rounds)
+  current_shoe_id  <- 1L
 
   bankroll <- start_bankroll
 
@@ -33,15 +34,16 @@ simulate_blackjack <- function(n_rounds       = 10000,
     if (shoe_exhausted(shoe) || cards_remaining(shoe) < 15) {
       shoe <- new_shoe(n_decks, system, cut_range)
       if (!system$balanced) shoe$running_count <- system$ihc
-      shoes_played <- shoes_played + 1L
+      current_shoe_id <- current_shoe_id + 1L
     }
     res <- play_round(shoe, betting, rules, min_bet, max_bet)
     shoe <- res$shoe
-    net_per_round[i]  <- res$net
-    bet_per_round[i]  <- res$bet
-    tc_per_round[i]   <- res$tc_at_bet
-    rc_per_round[i]   <- res$rc_at_bet
-    hands_dealt[i]    <- res$n_hands
+    net_per_round[i]      <- res$net
+    bet_per_round[i]      <- res$bet
+    tc_per_round[i]       <- res$tc_at_bet
+    rc_per_round[i]       <- res$rc_at_bet
+    hands_per_round[i]    <- res$n_hands
+    shoe_id_per_round[i]  <- current_shoe_id
     bankroll <- bankroll + res$net
     if (verbose && i %% 1000 == 0) {
       message(sprintf("Round %d: bankroll=%.2f", i, bankroll))
@@ -52,24 +54,26 @@ simulate_blackjack <- function(n_rounds       = 10000,
   total_net    <- sum(net_per_round)
   list(
     summary = list(
-      counting_system = system$name,
-      rounds          = n_rounds,
-      shoes_played    = shoes_played,
-      total_wagered   = total_action,
-      total_net       = total_net,
-      ev_per_round    = mean(net_per_round),
-      ev_per_unit     = if (total_action > 0) total_net / total_action else NA_real_,
-      win_rate_hands  = mean(net_per_round > 0),
-      avg_bet         = mean(bet_per_round[bet_per_round > 0]),
-      bankroll        = bankroll
+      counting_system  = system$name,
+      rounds           = n_rounds,
+      shoes_played     = current_shoe_id,
+      avg_rounds_per_shoe = n_rounds / current_shoe_id,
+      total_wagered    = total_action,
+      total_net        = total_net,
+      ev_per_round     = mean(net_per_round),
+      ev_per_unit      = if (total_action > 0) total_net / total_action else NA_real_,
+      win_rate_hands   = mean(net_per_round > 0),
+      avg_bet          = mean(bet_per_round[bet_per_round > 0]),
+      bankroll         = bankroll
     ),
     rounds = data.frame(
-      round       = seq_len(n_rounds),
-      true_count  = tc_per_round,
-      running_cnt = rc_per_round,
-      bet         = bet_per_round,
-      net         = net_per_round,
-      n_hands     = hands_dealt
+      round          = seq_len(n_rounds),
+      shoe_id        = shoe_id_per_round,
+      true_count     = tc_per_round,
+      running_cnt    = rc_per_round,
+      bet            = bet_per_round,
+      net            = net_per_round,
+      n_player_hands = hands_per_round
     )
   )
 }
