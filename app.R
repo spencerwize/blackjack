@@ -110,6 +110,9 @@ ui <- fluidPage(
           textOutput("player_msg")
       ),
       div(class = "panel",
+          uiOutput("round_review")
+      ),
+      div(class = "panel",
           uiOutput("controls")
       )
     ),
@@ -146,6 +149,7 @@ server <- function(input, output, session) {
     active = 1L,
     dealer = list(cards = integer(0), suits = character(0), hole = NA_integer_, hole_suit = NA_character_),
     msg = "",
+    round_log = list(),
     stats = empty_stats(),
     last_shoe_report = "(no shoe finished yet)",
     pending_quiz_resume = NULL    # function to call after quiz answered
@@ -238,6 +242,26 @@ server <- function(input, output, session) {
 
   output$shoe_report <- renderText(S$last_shoe_report)
 
+  action_name <- function(a) {
+    switch(a, H = "Hit", S = "Stand", D = "Double", P = "Split", a)
+  }
+
+  output$round_review <- renderUI({
+    if (S$phase != "settle" || length(S$round_log) == 0) return(NULL)
+    rows <- lapply(S$round_log, function(e) {
+      took <- action_name(e$took); want <- action_name(e$expected)
+      if (e$ok) {
+        sprintf('<li style="color:#9f9;">Hand %d (%s vs %s): %s — correct</li>',
+                e$hand_idx, e$hand, e$up, took)
+      } else {
+        sprintf('<li style="color:#f99;">Hand %d (%s vs %s): you %s — basic strategy says <b>%s</b></li>',
+                e$hand_idx, e$hand, e$up, took, want)
+      }
+    })
+    HTML(paste0("<h4>Round review</h4><ul>",
+                paste(unlist(rows), collapse = ""), "</ul>"))
+  })
+
   # ---- Controls --------------------------------------------------------
   output$controls <- renderUI({
     switch(S$phase,
@@ -300,6 +324,7 @@ server <- function(input, output, session) {
     )
     S$active <- 1L
     S$msg <- ""
+    S$round_log <- list()
     # Naturals.
     p_bj <- hand_is_blackjack(player)
     d_bj <- (d1$card == 1 || d1$card == 10) &&
@@ -378,11 +403,14 @@ server <- function(input, output, session) {
     ok <- (action_taken == expected)
     S$stats$decisions_total <- S$stats$decisions_total + 1L
     if (ok) S$stats$decisions_correct <- S$stats$decisions_correct + 1L
-    S$stats$decisions_log <- c(S$stats$decisions_log, list(list(
+    entry <- list(
+      hand_idx = S$active,
       hand = paste(vapply(h$cards, rank_label, character(1)), collapse = ""),
       up   = rank_label(S$dealer$cards[1]),
       took = action_taken, expected = expected, ok = ok
-    )))
+    )
+    S$stats$decisions_log <- c(S$stats$decisions_log, list(entry))
+    S$round_log <- c(S$round_log, list(entry))
     if (!ok && isTRUE(input$hint_mode)) {
       showNotification(sprintf("Basic strategy says: %s (you did %s)",
                                expected, action_taken),
