@@ -126,6 +126,8 @@ ui <- fluidPage(
           verbatimTextOutput("shoe_report")
       ),
       div(class = "panel",
+          actionButton("toggle_count", "Check running count", class = "btn"),
+          uiOutput("count_display"),
           actionButton("reset_session", "Reset session", class = "btn"),
           checkboxInput("hint_mode", "Show hint on mistakes (off = silent)", value = FALSE)
       )
@@ -152,6 +154,7 @@ server <- function(input, output, session) {
     round_log = list(),
     stats = empty_stats(),
     last_shoe_report = "(no shoe finished yet)",
+    show_count = FALSE,
     pending_quiz_resume = NULL    # function to call after quiz answered
   )
 
@@ -241,6 +244,19 @@ server <- function(input, output, session) {
   }, striped = TRUE)
 
   output$shoe_report <- renderText(S$last_shoe_report)
+
+  output$count_display <- renderUI({
+    if (!isTRUE(S$show_count) || is.null(S$shoe)) return(NULL)
+    rc <- S$shoe$running_count
+    dr <- decks_remaining(S$shoe)
+    tc <- if (dr > 0) rc / dr else 0
+    HTML(sprintf(
+      '<div style="margin:6px 0;padding:6px;background:#000;border-radius:6px;">
+         RC: <b>%d</b> &nbsp; TC: <b>%.2f</b> &nbsp; Decks left: %.2f
+       </div>', rc, tc, dr))
+  })
+
+  observeEvent(input$toggle_count, { S$show_count <- !isTRUE(S$show_count) })
 
   action_name <- function(a) {
     switch(a, H = "Hit", S = "Stand", D = "Double", P = "Split", a)
