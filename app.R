@@ -126,7 +126,8 @@ ui <- fluidPage(
           verbatimTextOutput("shoe_report")
       ),
       div(class = "panel",
-          actionButton("toggle_count", "Check running count", class = "btn"),
+          actionButton("open_setup", "Settings", class = "btn"),
+          uiOutput("count_button"),
           uiOutput("count_display"),
           actionButton("reset_session", "Reset session", class = "btn"),
           checkboxInput("hint_mode", "Show hint on mistakes (off = silent)", value = FALSE)
@@ -141,32 +142,101 @@ server <- function(input, output, session) {
 
   S <- reactiveValues(
     system = hi_lo_system(),
+    system_name = "hi-lo",
     n_decks = 6,
+    base_unit = 5,
+    max_units = 12,
+    h17 = FALSE,
+    mode = "play",                # "play" | "drill"
     shoe = NULL,
     suits_dealt = integer(0),     # parallel to shoe$cards positions consumed
-    phase = "betting",            # betting | playing | settle | shoe_quiz | shoe_report
+    phase = "setup",              # setup | betting | playing | settle | shoe_report | drill
     bet_input = 5,
-    base_unit = 5,
     player_hands = list(),
     active = 1L,
     dealer = list(cards = integer(0), suits = character(0), hole = NA_integer_, hole_suit = NA_character_),
     msg = "",
     round_log = list(),
+    drill_result = NULL,
     stats = empty_stats(),
     last_shoe_report = "(no shoe finished yet)",
     show_count = FALSE,
-    pending_quiz_resume = NULL    # function to call after quiz answered
+    pending_quiz_resume = NULL
   )
-
-  # Initialize first shoe.
-  observe({
-    if (is.null(S$shoe)) {
-      S$shoe <- new_shoe(S$n_decks, S$system)
-    }
-  })
 
   # Suit picker: pure cosmetics; doesn't affect logic.
   pick_suit <- function() sample(SUITS, 1)
+
+  # ---- Setup modal -----------------------------------------------------
+  show_setup_modal <- function() {
+    showModal(modalDialog(
+      title = "Setup",
+      numericInput("cfg_decks", "Number of decks (1-8)",
+                   value = S$n_decks, min = 1, max = 8, step = 1),
+      selectInput("cfg_system", "Counting system",
+                  choices = c("Hi-Lo" = "hi-lo", "KO" = "ko",
+                              "Hi-Opt I" = "hi-opt i", "Omega II" = "omega ii"),
+                  selected = S$system_name),
+      numericInput("cfg_unit", "Base bet unit ($)",
+                   value = S$base_unit, min = 1, step = 1),
+      numericInput("cfg_max_units", "Max bet (units)",
+                   value = S$max_units, min = 1, step = 1),
+      checkboxInput("cfg_h17", "Dealer hits soft 17 (H17)", value = S$h17),
+      radioButtons("cfg_mode", "Mode",
+                   choices = c("Full game (bet + play + count)" = "play",
+                               "Decision drill only (Hit/Stand/Double/Split)" = "drill"),
+                   selected = S$mode),
+      footer = tagList(actionButton("apply_setup", "Start", class = "btn-primary")),
+      easyClose = FALSE
+    ))
+  }
+  show_setup_modal()
+
+  observeEvent(input$apply_setup, {
+    S$n_decks     <- max(1, min(8, as.integer(input$cfg_decks %||% 6)))
+    S$system_name <- input$cfg_system
+    S$system      <- get_system(S$system_name, n_decks = S$n_decks)
+    S$base_unit   <- max(1, as.numeric(input$cfg_unit %||% 5))
+    S$max_units   <- max(1, as.integer(input$cfg_max_units %||% 12))
+    S$h17         <- isTRUE(input$cfg_h17)
+    S$mode        <- input$cfg_mode
+    S$bet_input   <- S$base_unit
+    S$shoe        <- new_shoe(S$n_decks, S$system)
+    S$player_hands <- list()
+    S$dealer <- list(cards = integer(0), suits = character(0),
+                     hole = NA_integer_, hole_suit = NA_character_)
+    S$round_log <- list(); S$drill_result <- NULL; S$msg <- ""
+    removeModal()
+    if (S$mode == "drill") next_drill() else S$phase <- "betting"
+  })
+
+  # ---- Drill mode ------------------------------------------------------
+  rank_weights <- c(1,1,1,1,1,1,1,1,1,4)        # rank 10 covers T/J/Q/K
+  pick_rank <- function() sample.int(10, 1, prob = rank_weights)
+
+  next_drill <- function() {
+    S$player_hands <- list(list(
+      cards = c(pick_rank(), pick_rank()),
+      suits = c(pick_suit(), pick_suit()),
+      bet = 0, doubled = FALSE, from_split_ace = FALSE,
+      finished = FALSE, result_text = ""
+    ))
+    S$dealer <- list(cards = pick_rank(), suits = pick_suit(),
+                     hole = NA_integer_, hole_suit = NA_character_)
+    S$active <- 1L; S$drill_result <- NULL; S$msg <- ""
+    S$phase <- "drill"
+  }
+
+  grade_drill <- function(action_taken) {
+    h <- S$player_hands[[1]]
+    can_split <- h$cards[1] == h$cards[2]
+    expected <- basic_action(h$cards, S$dealer$cards[1],
+                             can_double = TRUE, can_split = can_split)
+    ok <- (action_taken == expected)
+    S$stats$decisions_total   <- S$stats$decisions_total + 1L
+    if (ok) S$stats$decisions_correct <- S$stats$decisions_correct + 1L
+    S$drill_result <- list(took = action_taken, expected = expected, ok = ok)
+  }
 
   # Wrappers around the engine that also produce a parallel suit per card.
   draw <- function(hidden_count = FALSE) {
@@ -210,8 +280,9 @@ server <- function(input, output, session) {
       tot <- hand_total(h$cards)
       soft <- hand_is_soft(h$cards)
       cls <- if (S$phase == "playing" && i == S$active) "hand-active" else ""
-      label <- sprintf("Hand %d  bet $%g  total %s%s%s",
-                       i, h$bet, tot,
+      bet_part <- if (S$mode == "drill") "" else sprintf("  bet $%g", h$bet)
+      label <- sprintf("Hand %d%s  total %s%s%s",
+                       i, bet_part, tot,
                        if (soft) " (soft)" else "",
                        if (isTRUE(h$result_text != "")) paste0(" — ", h$result_text) else "")
       HTML(sprintf('<div class="%s">%s%s</div>', cls,
@@ -245,7 +316,13 @@ server <- function(input, output, session) {
 
   output$shoe_report <- renderText(S$last_shoe_report)
 
+  output$count_button <- renderUI({
+    if (S$mode == "drill") return(NULL)
+    actionButton("toggle_count", "Check running count", class = "btn")
+  })
+
   output$count_display <- renderUI({
+    if (S$mode == "drill") return(NULL)
     if (!isTRUE(S$show_count) || is.null(S$shoe)) return(NULL)
     rc <- S$shoe$running_count
     dr <- decks_remaining(S$shoe)
@@ -257,6 +334,7 @@ server <- function(input, output, session) {
   })
 
   observeEvent(input$toggle_count, { S$show_count <- !isTRUE(S$show_count) })
+  observeEvent(input$open_setup, { show_setup_modal() })
 
   action_name <- function(a) {
     switch(a, H = "Hit", S = "Stand", D = "Double", P = "Split", a)
@@ -305,6 +383,28 @@ server <- function(input, output, session) {
       "shoe_report" = tagList(
         actionButton("ack_report", "Start new shoe", class = "btn btn-primary")
       ),
+      "drill" = {
+        if (is.null(S$drill_result)) {
+          h <- S$player_hands[[1]]
+          can_split <- h$cards[1] == h$cards[2]
+          tagList(
+            actionButton("act_hit",    "Hit",    class = "btn"),
+            actionButton("act_stand",  "Stand",  class = "btn"),
+            actionButton("act_double", "Double", class = "btn"),
+            if (can_split) actionButton("act_split", "Split", class = "btn")
+          )
+        } else {
+          r <- S$drill_result
+          msg <- if (r$ok) {
+            sprintf('<div style="color:#9f9;">Correct: %s.</div>', action_name(r$took))
+          } else {
+            sprintf('<div style="color:#f99;">You said %s. Basic strategy: <b>%s</b>.</div>',
+                    action_name(r$took), action_name(r$expected))
+          }
+          tagList(HTML(msg),
+                  actionButton("next_drill", "Next hand", class = "btn btn-primary"))
+        }
+      },
       NULL
     )
   })
@@ -369,7 +469,9 @@ server <- function(input, output, session) {
       if (alive) {
         repeat {
           tot <- hand_total(S$dealer$cards)
-          if (tot >= 17) break    # S17
+          soft <- hand_is_soft(S$dealer$cards)
+          if (tot > 17) break
+          if (tot == 17 && !(isTRUE(S$h17) && soft)) break
           d <- draw()
           S$dealer$cards <- c(S$dealer$cards, d$card)
           S$dealer$suits <- c(S$dealer$suits, d$suit)
@@ -544,10 +646,23 @@ server <- function(input, output, session) {
 
   # ---- Event wiring ----------------------------------------------------
   observeEvent(input$deal,        { S$bet_input <- input$bet_input; start_round() })
-  observeEvent(input$act_hit,     { record_decision("H"); do_hit() })
-  observeEvent(input$act_stand,   { record_decision("S"); do_stand() })
-  observeEvent(input$act_double,  { record_decision("D"); do_double() })
-  observeEvent(input$act_split,   { record_decision("P"); do_split() })
+  observeEvent(input$act_hit,     {
+    if (S$phase == "drill") grade_drill("H")
+    else { record_decision("H"); do_hit() }
+  })
+  observeEvent(input$act_stand,   {
+    if (S$phase == "drill") grade_drill("S")
+    else { record_decision("S"); do_stand() }
+  })
+  observeEvent(input$act_double,  {
+    if (S$phase == "drill") grade_drill("D")
+    else { record_decision("D"); do_double() }
+  })
+  observeEvent(input$act_split,   {
+    if (S$phase == "drill") grade_drill("P")
+    else { record_decision("P"); do_split() }
+  })
+  observeEvent(input$next_drill,  { next_drill() })
   observeEvent(input$next_round,  {
     S$player_hands <- list()
     S$dealer <- list(cards = integer(0), suits = character(0),
