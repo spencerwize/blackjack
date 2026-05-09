@@ -50,10 +50,10 @@ cards_html <- function(cards, suits, hide_index = NULL) {
   paste0('<div class="hand">', paste(pieces, collapse = ""), "</div>")
 }
 
-# Hi-Lo target bet: 1 unit at TC<=1, then floor(TC)*unit up to max.
-target_bet <- function(tc, unit = 5, max_units = 12) {
+# Hi-Lo target bet: base_unit at TC<1, else base_unit*(floor(TC)+1), capped.
+target_bet <- function(tc, unit = 10, max_units = 12) {
   if (tc < 1) return(unit)
-  unit * min(max_units, floor(tc))
+  unit * min(max_units, floor(tc) + 1)
 }
 
 # Empty stats tally.
@@ -144,14 +144,14 @@ server <- function(input, output, session) {
     system = hi_lo_system(),
     system_name = "hi-lo",
     n_decks = 6,
-    base_unit = 5,
+    base_unit = 10,
     max_units = 12,
     h17 = FALSE,
     mode = "play",                # "play" | "drill"
     shoe = NULL,
     suits_dealt = integer(0),     # parallel to shoe$cards positions consumed
     phase = "setup",              # setup | betting | playing | settle | shoe_report | drill
-    bet_input = 5,
+    bet_input = 10,
     player_hands = list(),
     active = 1L,
     dealer = list(cards = integer(0), suits = character(0), hole = NA_integer_, hole_suit = NA_character_),
