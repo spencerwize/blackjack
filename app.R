@@ -169,23 +169,27 @@ server <- function(input, output, session) {
 
   # ---- Setup modal -----------------------------------------------------
   show_setup_modal <- function() {
+    isolate({
+      decks <- S$n_decks; sysn <- S$system_name; unit <- S$base_unit
+      mxu <- S$max_units; h17v <- S$h17; mode <- S$mode
+    })
     showModal(modalDialog(
       title = "Setup",
       numericInput("cfg_decks", "Number of decks (1-8)",
-                   value = S$n_decks, min = 1, max = 8, step = 1),
+                   value = decks, min = 1, max = 8, step = 1),
       selectInput("cfg_system", "Counting system",
                   choices = c("Hi-Lo" = "hi-lo", "KO" = "ko",
                               "Hi-Opt I" = "hi-opt i", "Omega II" = "omega ii"),
-                  selected = S$system_name),
+                  selected = sysn),
       numericInput("cfg_unit", "Base bet unit ($)",
-                   value = S$base_unit, min = 1, step = 1),
+                   value = unit, min = 1, step = 1),
       numericInput("cfg_max_units", "Max bet (units)",
-                   value = S$max_units, min = 1, step = 1),
-      checkboxInput("cfg_h17", "Dealer hits soft 17 (H17)", value = S$h17),
+                   value = mxu, min = 1, step = 1),
+      checkboxInput("cfg_h17", "Dealer hits soft 17 (H17)", value = h17v),
       radioButtons("cfg_mode", "Mode",
                    choices = c("Full game (bet + play + count)" = "play",
                                "Decision drill only (Hit/Stand/Double/Split)" = "drill"),
-                   selected = S$mode),
+                   selected = mode),
       footer = tagList(actionButton("apply_setup", "Start", class = "btn-primary")),
       easyClose = FALSE
     ))
