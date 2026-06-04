@@ -124,6 +124,56 @@ theoretical_total <- function(unit       = 10,
   )
 }
 
+# Breakdown of outcomes by category. Helps localize bugs.
+diagnose <- function(n_rounds = 100000, seed = 1) {
+  if (!is.null(seed)) set.seed(seed)
+  system <- hi_lo_system()
+  shoe <- new_shoe(6, system)
+  rules <- default_rules()
+  fb <- flat_bet(1)
+  player_bj <- 0L; dealer_bj <- 0L; both_bj <- 0L
+  net_by_outcome <- list(win = 0, lose = 0, push = 0)
+  hands_total <- 0L
+  net_total <- 0
+  for (i in seq_len(n_rounds)) {
+    if (shoe_exhausted(shoe) || cards_remaining(shoe) < 15) {
+      shoe <- new_shoe(6, system)
+    }
+    # Peek before play to detect naturals.
+    pos0 <- shoe$pos
+    p1 <- shoe$cards[pos0]; up <- shoe$cards[pos0 + 1L]
+    p2 <- shoe$cards[pos0 + 2L]; hole <- shoe$cards[pos0 + 3L]
+    pbj <- hand_is_blackjack(c(p1, p2))
+    dbj <- (up == 1 || up == 10) && hand_is_blackjack(c(up, hole))
+    if (pbj) player_bj <- player_bj + 1L
+    if (dbj) dealer_bj <- dealer_bj + 1L
+    if (pbj && dbj) both_bj <- both_bj + 1L
+    res <- play_round(shoe, fb, rules, 1, 1)
+    shoe <- res$shoe
+    net_total <- net_total + res$net
+    hands_total <- hands_total + res$n_hands
+    if (res$net > 0) net_by_outcome$win  <- net_by_outcome$win  + res$net
+    else if (res$net < 0) net_by_outcome$lose <- net_by_outcome$lose + res$net
+    else net_by_outcome$push <- net_by_outcome$push + 1
+  }
+  cat(sprintf(
+    "Rounds=%d hands=%d net=%.1f edge=%.3f%%\n",
+    n_rounds, hands_total, net_total, 100 * net_total / n_rounds))
+  cat(sprintf(
+    "Player BJ: %d (%.2f%%) — expected ~4.74%%\n",
+    player_bj, 100 * player_bj / n_rounds))
+  cat(sprintf(
+    "Dealer BJ: %d (%.2f%%) — expected ~4.74%%\n",
+    dealer_bj, 100 * dealer_bj / n_rounds))
+  cat(sprintf(
+    "Both BJ:   %d (%.2f%%)\n", both_bj, 100 * both_bj / n_rounds))
+  cat(sprintf("Sum of winning net:  %.1f\n", net_by_outcome$win))
+  cat(sprintf("Sum of losing  net:  %.1f\n", net_by_outcome$lose))
+  invisible(list(rounds = n_rounds, hands = hands_total,
+                 net = net_total, player_bj = player_bj,
+                 dealer_bj = dealer_bj, both_bj = both_bj))
+}
+
 # Flat-bet sanity check. Returns empirical house edge as a % of action.
 # At 6 decks S17 DAS no-surrender, expectation is around -0.45% +/- a few
 # bps of sim noise. Anything far from that points to a bug.
