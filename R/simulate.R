@@ -124,6 +124,23 @@ theoretical_total <- function(unit       = 10,
   )
 }
 
+# Flat-bet sanity check. Returns empirical house edge as a % of action.
+# At 6 decks S17 DAS no-surrender, expectation is around -0.45% +/- a few
+# bps of sim noise. Anything far from that points to a bug.
+sanity_check <- function(n_rounds = 200000, n_decks = 6, seed = 1) {
+  res <- simulate_blackjack(
+    n_rounds = n_rounds, n_decks = n_decks, counting = "Hi-Lo",
+    betting  = flat_bet(min_bet = 1),
+    min_bet = 1, max_bet = 1, seed = seed
+  )
+  edge_pct <- 100 * res$summary$total_net / res$summary$total_wagered
+  cat(sprintf(
+    "Flat-bet sim: %d rounds, %d shoes\n  wagered=%.0f  net=%.1f  edge=%.3f%%\n  expected ~ -0.45%% at 6-deck S17 DAS\n",
+    res$summary$rounds, res$summary$shoes_played,
+    res$summary$total_wagered, res$summary$total_net, edge_pct))
+  invisible(res$summary)
+}
+
 # Source all source files in one go.
 source_all <- function(dir = "R") {
   files <- c("counting_systems.R", "cards.R", "hand.R", "basic_strategy.R",
