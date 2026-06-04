@@ -95,6 +95,8 @@ theoretical_total <- function(unit       = 10,
     rules    = rules, min_bet = min_bet, max_bet = max_bet, seed = seed
   )
   r <- res$rounds
+  r$cum_wagered <- cumsum(r$bet)
+  r$cum_net     <- cumsum(r$net)
   list(
     unit             = unit,
     rounds           = n_rounds,
