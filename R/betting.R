@@ -43,17 +43,12 @@ ko_running_bet <- function(unit = 1, pivot = 0, max_units = 10) {
 
 # Tiered ramp:
 #   TC < 1        -> unit * 0.5
-#   1 <= TC < 2   -> unit
-#   2 <= TC < 3   -> unit * 2
-#   3 <= TC < 4   -> unit * 3
-#   TC >= 4       -> unit * 4
-tiered_ramp_bet <- function(unit = 10) {
-  force(unit)
+#   n <= TC < n+1 -> unit * n   for n in 1..max_units
+#   TC >= max_units -> unit * max_units
+tiered_ramp_bet <- function(unit = 10, max_units = 10) {
+  force(unit); force(max_units)
   function(tc, rc, ...) {
     if (tc < 1) return(unit * 0.5)
-    if (tc < 2) return(unit)
-    if (tc < 3) return(unit * 2)
-    if (tc < 4) return(unit * 3)
-    unit * 4
+    unit * min(max_units, floor(tc))
   }
 }

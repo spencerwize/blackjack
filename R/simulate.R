@@ -86,12 +86,13 @@ theoretical_total <- function(unit       = 10,
                               n_decks    = 6,
                               counting   = "Hi-Lo",
                               rules      = default_rules(),
+                              max_units  = 10,
                               min_bet    = unit * 0.5,
-                              max_bet    = unit * 4,
+                              max_bet    = unit * max_units,
                               seed       = NULL) {
   res <- simulate_blackjack(
     n_rounds = n_rounds, n_decks = n_decks, counting = counting,
-    betting  = tiered_ramp_bet(unit),
+    betting  = tiered_ramp_bet(unit, max_units = max_units),
     rules    = rules, min_bet = min_bet, max_bet = max_bet, seed = seed
   )
   r <- res$rounds
