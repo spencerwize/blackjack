@@ -78,6 +78,49 @@ simulate_blackjack <- function(n_rounds       = 10000,
   )
 }
 
+# Run the tiered ramp over n_rounds and return cumulative bet + net totals.
+# Use to size a bankroll: how much money goes across the felt over N hands
+# at a given unit, and what the EV looks like.
+theoretical_total <- function(unit       = 10,
+                              n_rounds   = 10000,
+                              n_decks    = 6,
+                              counting   = "Hi-Lo",
+                              rules      = default_rules(),
+                              min_bet    = unit * 0.5,
+                              max_bet    = unit * 4,
+                              seed       = NULL) {
+  res <- simulate_blackjack(
+    n_rounds = n_rounds, n_decks = n_decks, counting = counting,
+    betting  = tiered_ramp_bet(unit),
+    rules    = rules, min_bet = min_bet, max_bet = max_bet, seed = seed
+  )
+  r <- res$rounds
+  list(
+    unit             = unit,
+    rounds           = n_rounds,
+    total_wagered    = sum(r$bet),
+    total_net        = sum(r$net),
+    avg_bet          = mean(r$bet),
+    bets_by_tier     = c(
+      "TC<1"    = sum(r$bet[r$true_count <  1]),
+      "TC 1-2"  = sum(r$bet[r$true_count >= 1 & r$true_count < 2]),
+      "TC 2-3"  = sum(r$bet[r$true_count >= 2 & r$true_count < 3]),
+      "TC 3-4"  = sum(r$bet[r$true_count >= 3 & r$true_count < 4]),
+      "TC>=4"   = sum(r$bet[r$true_count >= 4])
+    ),
+    hands_by_tier    = c(
+      "TC<1"    = sum(r$true_count <  1),
+      "TC 1-2"  = sum(r$true_count >= 1 & r$true_count < 2),
+      "TC 2-3"  = sum(r$true_count >= 2 & r$true_count < 3),
+      "TC 3-4"  = sum(r$true_count >= 3 & r$true_count < 4),
+      "TC>=4"   = sum(r$true_count >= 4)
+    ),
+    cum_wagered      = cumsum(r$bet),
+    cum_net          = cumsum(r$net),
+    rounds_df        = r
+  )
+}
+
 # Source all source files in one go.
 source_all <- function(dir = "R") {
   files <- c("counting_systems.R", "cards.R", "hand.R", "basic_strategy.R",
